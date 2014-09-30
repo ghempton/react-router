@@ -90,7 +90,7 @@ var Routes = React.createClass({
   },
   
   componentWillUnmount: function() {
-    RouteStore.unregisterChildren(this.props.children);
+    RouteStore.unregisterAllRoutes();
   },
 
   /**

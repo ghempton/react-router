@@ -1,6 +1,11 @@
 !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.ReactRouter=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 var LocationDispatcher = _dereq_('../dispatchers/LocationDispatcher');
+var isAbsoluteURL = _dereq_('../utils/isAbsoluteURL');
 var makePath = _dereq_('../utils/makePath');
+
+function loadURL(url) {
+  window.location = url;
+}
 
 /**
  * Actions that modify the URL.
@@ -17,10 +22,14 @@ var LocationActions = {
    * a new URL onto the history stack.
    */
   transitionTo: function (to, params, query) {
-    LocationDispatcher.handleViewAction({
-      type: LocationActions.PUSH,
-      path: makePath(to, params, query)
-    });
+    if (isAbsoluteURL(to)) {
+      loadURL(to);
+    } else {
+      LocationDispatcher.handleViewAction({
+        type: LocationActions.PUSH,
+        path: makePath(to, params, query)
+      });
+    }
   },
 
   /**
@@ -28,10 +37,14 @@ var LocationActions = {
    * the current URL in the history stack.
    */
   replaceWith: function (to, params, query) {
-    LocationDispatcher.handleViewAction({
-      type: LocationActions.REPLACE,
-      path: makePath(to, params, query)
-    });
+    if (isAbsoluteURL(to)) {
+      loadURL(to);
+    } else {
+      LocationDispatcher.handleViewAction({
+        type: LocationActions.REPLACE,
+        path: makePath(to, params, query)
+      });
+    }
   },
 
   /**
@@ -57,7 +70,7 @@ var LocationActions = {
 
 module.exports = LocationActions;
 
-},{"../dispatchers/LocationDispatcher":8,"../utils/makePath":26}],2:[function(_dereq_,module,exports){
+},{"../dispatchers/LocationDispatcher":8,"../utils/isAbsoluteURL":28,"../utils/makePath":30}],2:[function(_dereq_,module,exports){
 var merge = _dereq_('react/lib/merge');
 var Route = _dereq_('./Route');
 
@@ -78,7 +91,7 @@ function DefaultRoute(props) {
 
 module.exports = DefaultRoute;
 
-},{"./Route":6,"react/lib/merge":44}],3:[function(_dereq_,module,exports){
+},{"./Route":6,"react/lib/merge":48}],3:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var ActiveState = _dereq_('../mixins/ActiveState');
 var transitionTo = _dereq_('../actions/LocationActions').transitionTo;
@@ -200,13 +213,13 @@ var Link = React.createClass({
     var params = Link.getParams(nextProps);
 
     this.setState({
-      isActive: Link.isActive(nextProps.to, params, nextProps.query)
+      isActive: this.isActive(nextProps.to, params, nextProps.query)
     });
   },
 
   updateActiveState: function () {
     this.setState({
-      isActive: Link.isActive(this.props.to, Link.getParams(this.props), this.props.query)
+      isActive: this.isActive(this.props.to, Link.getParams(this.props), this.props.query)
     });
   },
 
@@ -249,7 +262,7 @@ var Link = React.createClass({
 
 module.exports = Link;
 
-},{"../actions/LocationActions":1,"../mixins/ActiveState":15,"../utils/hasOwnProperty":24,"../utils/makeHref":25,"../utils/withoutProperties":29,"react/lib/warning":48}],4:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../mixins/ActiveState":16,"../utils/hasOwnProperty":27,"../utils/makeHref":29,"../utils/withoutProperties":33,"react/lib/warning":52}],4:[function(_dereq_,module,exports){
 var merge = _dereq_('react/lib/merge');
 var Route = _dereq_('./Route');
 
@@ -271,7 +284,7 @@ function NotFoundRoute(props) {
 
 module.exports = NotFoundRoute;
 
-},{"./Route":6,"react/lib/merge":44}],5:[function(_dereq_,module,exports){
+},{"./Route":6,"react/lib/merge":48}],5:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var Route = _dereq_('./Route');
 
@@ -316,6 +329,7 @@ var RESERVED_PROPS = {
   handler: true,
   path: true,
   defaultRoute: true,
+  notFoundRoute: true,
   paramNames: true,
   children: true // ReactChildren
 };
@@ -382,8 +396,8 @@ var Route = React.createClass({
   },
 
   propTypes: {
-    preserveScrollPosition: React.PropTypes.bool.isRequired,
     handler: React.PropTypes.any.isRequired,
+    preserveScrollPosition: React.PropTypes.bool.isRequired,
     path: React.PropTypes.string,
     name: React.PropTypes.string
   },
@@ -405,23 +419,20 @@ var Route = React.createClass({
 
 module.exports = Route;
 
-},{"../utils/withoutProperties":29}],7:[function(_dereq_,module,exports){
+},{"../utils/withoutProperties":33}],7:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var warning = _dereq_('react/lib/warning');
 var copyProperties = _dereq_('react/lib/copyProperties');
-var Promise = _dereq_('when/lib/Promise');
+var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var LocationActions = _dereq_('../actions/LocationActions');
 var Route = _dereq_('../components/Route');
+var ActiveDelegate = _dereq_('../mixins/ActiveDelegate');
+var PathListener = _dereq_('../mixins/PathListener');
+var RouteStore = _dereq_('../stores/RouteStore');
 var Path = _dereq_('../utils/Path');
+var Promise = _dereq_('../utils/Promise');
 var Redirect = _dereq_('../utils/Redirect');
 var Transition = _dereq_('../utils/Transition');
-var DefaultLocation = _dereq_('../locations/DefaultLocation');
-var HashLocation = _dereq_('../locations/HashLocation');
-var HistoryLocation = _dereq_('../locations/HistoryLocation');
-var RefreshLocation = _dereq_('../locations/RefreshLocation');
-var ActiveStore = _dereq_('../stores/ActiveStore');
-var PathStore = _dereq_('../stores/PathStore');
-var RouteStore = _dereq_('../stores/RouteStore');
 
 /**
  * The ref name that can be used to reference the active route component.
@@ -429,19 +440,13 @@ var RouteStore = _dereq_('../stores/RouteStore');
 var REF_NAME = '__activeRoute__';
 
 /**
- * A hash of { name, location } pairs of all locations.
- */
-var NAMED_LOCATIONS = {
-  hash: HashLocation,
-  history: HistoryLocation,
-  refresh: RefreshLocation
-};
-
-/**
  * The default handler for aborted transitions. Redirects replace
  * the current URL and all others roll it back.
  */
 function defaultAbortedTransitionHandler(transition) {
+  if (!canUseDOM)
+    return;
+
   var reason = transition.abortReason;
 
   if (reason instanceof Redirect) {
@@ -449,13 +454,6 @@ function defaultAbortedTransitionHandler(transition) {
   } else {
     LocationActions.goBack();
   }
-}
-
-/**
- * The default handler for active state updates.
- */
-function defaultActiveStateChangeHandler(state) {
-  ActiveStore.updateState(state);
 }
 
 /**
@@ -467,8 +465,16 @@ function defaultTransitionErrorHandler(error) {
   throw error; // This error probably originated in a transition hook.
 }
 
-function maybeUpdateScroll(routes, rootRoute) {
-  if (!routes.props.preserveScrollPosition && !rootRoute.props.preserveScrollPosition)
+/**
+ * Updates the window's scroll position given the current route.
+ */
+function maybeUpdateScroll(routes) {
+  if (!canUseDOM)
+    return;
+
+  var currentRoute = routes.getCurrentRoute();
+
+  if (!routes.props.preserveScrollPosition && currentRoute && !currentRoute.props.preserveScrollPosition)
     LocationActions.updateScroll();
 }
 
@@ -482,59 +488,39 @@ var Routes = React.createClass({
 
   displayName: 'Routes',
 
+  mixins: [ ActiveDelegate, PathListener ],
+
   propTypes: {
     onAbortedTransition: React.PropTypes.func.isRequired,
-    onActiveStateChange: React.PropTypes.func.isRequired,
     onTransitionError: React.PropTypes.func.isRequired,
-    preserveScrollPosition: React.PropTypes.bool,
-    location: function (props, propName, componentName) {
-      var location = props[propName];
-
-      if (typeof location === 'string' && !(location in NAMED_LOCATIONS))
-        return new Error('Unknown location "' + location + '", see ' + componentName);
-    }
+    preserveScrollPosition: React.PropTypes.bool
   },
 
   getDefaultProps: function () {
     return {
       onAbortedTransition: defaultAbortedTransitionHandler,
-      onActiveStateChange: defaultActiveStateChangeHandler,
       onTransitionError: defaultTransitionErrorHandler,
-      preserveScrollPosition: false,
-      location: DefaultLocation
+      preserveScrollPosition: false
     };
   },
 
   getInitialState: function () {
     return {
+      matches: [],
       routes: RouteStore.registerChildren(this.props.children, this)
     };
   },
-
-  getLocation: function () {
-    var location = this.props.location;
-
-    if (typeof location === 'string')
-      return NAMED_LOCATIONS[location];
-
-    return location;
+  
+  componentWillUnmount: function() {
+    RouteStore.unregisterAllRoutes();
   },
 
-  componentWillMount: function () {
-    PathStore.setup(this.getLocation());
-    PathStore.addChangeListener(this.handlePathChange);
-  },
-
-  componentDidMount: function () {
-    this.handlePathChange();
-  },
-
-  componentWillUnmount: function () {
-    PathStore.removeChangeListener(this.handlePathChange);
-  },
-
-  handlePathChange: function () {
-    this.dispatch(PathStore.getCurrentPath());
+  /**
+   * Gets the <Route> component that is currently active.
+   */
+  getCurrentRoute: function () {
+    var rootMatch = getRootMatch(this.state.matches);
+    return rootMatch && rootMatch.route;
   },
 
   /**
@@ -558,61 +544,50 @@ var Routes = React.createClass({
     return findMatches(Path.withoutQuery(path), this.state.routes, this.props.defaultRoute, this.props.notFoundRoute);
   },
 
+  updatePath: function (path) {
+    var self = this;
+
+    this.dispatch(path, function (error, transition) {
+      if (error) {
+        self.props.onTransitionError(error);
+      } else if (transition.isAborted) {
+        self.props.onAbortedTransition(transition);
+      } else {
+        self.emitChange();
+        maybeUpdateScroll(self);
+      }
+    });
+  },
+
   /**
-   * Performs a transition to the given path and returns a promise for the
-   * Transition object that was used.
+   * Performs a transition to the given path and calls callback(error, transition)
+   * with the Transition object when the transition is finished and the component's
+   * state has been updated accordingly.
    *
-   * In order to do this, the router first determines which routes are involved
-   * in the transition beginning with the current route, up the route tree to
-   * the first parent route that is shared with the destination route, and back
-   * down the tree to the destination route. The willTransitionFrom static
-   * method is invoked on all route handlers we're transitioning away from, in
-   * reverse nesting order. Likewise, the willTransitionTo static method
-   * is invoked on all route handlers we're transitioning to.
+   * In a transition, the router first determines which routes are involved by
+   * beginning with the current route, up the route tree to the first parent route
+   * that is shared with the destination route, and back down the tree to the
+   * destination route. The willTransitionFrom hook is invoked on all route handlers
+   * we're transitioning away from, in reverse nesting order. Likewise, the
+   * willTransitionTo hook is invoked on all route handlers we're transitioning to.
    *
-   * Both willTransitionFrom and willTransitionTo hooks may either abort or
-   * redirect the transition. If they need to resolve asynchronously, they may
-   * return a promise.
-   *
-   * Any error that occurs asynchronously during the transition is re-thrown in
-   * the top-level scope unless returnRejectedPromise is true, in which case a
-   * rejected promise is returned so the caller may handle the error.
+   * Both willTransitionFrom and willTransitionTo hooks may either abort or redirect
+   * the transition. To resolve asynchronously, they may use transition.wait(promise).
    *
    * Note: This function does not update the URL in a browser's location bar.
-   * If you want to keep the URL in sync with transitions, use Router.transitionTo,
-   * Router.replaceWith, or Router.goBack instead.
    */
-  dispatch: function (path, returnRejectedPromise) {
+  dispatch: function (path, callback) {
     var transition = new Transition(path);
-    var routes = this;
+    var self = this;
 
-    var promise = runTransitionHooks(routes, transition).then(function (nextState) {
-      if (transition.isAborted) {
-        routes.props.onAbortedTransition(transition);
-      } else if (nextState) {
-        routes.setState(nextState);
-        routes.props.onActiveStateChange(nextState);
+    computeNextState(this, transition, function (error, nextState) {
+      if (error || nextState == null)
+        return callback(error, transition);
 
-        // TODO: add functional test
-        var rootMatch = getRootMatch(nextState.matches);
-
-        if (rootMatch)
-          maybeUpdateScroll(routes, rootMatch.route);
-      }
-
-      return transition;
-    });
-
-    if (!returnRejectedPromise) {
-      promise = promise.then(undefined, function (error) {
-        // Use setTimeout to break the promise chain.
-        setTimeout(function () {
-          routes.props.onTransitionError(error);
-        });
+      self.setState(nextState, function () {
+        callback(null, transition);
       });
-    }
-
-    return promise;
+    });
   },
 
   render: function () {
@@ -701,17 +676,16 @@ function updateMatchComponents(matches, refs) {
 }
 
 /**
- * Runs all transition hooks that are required to get from the current state
- * to the state specified by the given transition and updates the current state
- * if they all pass successfully. Returns a promise that resolves to the new
- * state if it needs to be updated, or undefined if not.
+ * Computes the next state for the given <Routes> component and calls
+ * callback(error, nextState) when finished. Also runs all transition
+ * hooks along the way.
  */
-function runTransitionHooks(routes, transition) {
-  if (routes.state.path === transition.path)
-    return Promise.resolve(); // Nothing to do!
+function computeNextState(component, transition, callback) {
+  if (component.state.path === transition.path)
+    return callback(); // Nothing to do!
 
-  var currentMatches = routes.state.matches;
-  var nextMatches = routes.match(transition.path);
+  var currentMatches = component.state.matches;
+  var nextMatches = component.match(transition.path);
 
   warning(
     nextMatches,
@@ -723,8 +697,8 @@ function runTransitionHooks(routes, transition) {
     nextMatches = [];
 
   var fromMatches, toMatches;
-  if (currentMatches) {
-    updateMatchComponents(currentMatches, routes.refs);
+  if (currentMatches.length) {
+    updateMatchComponents(currentMatches, component.refs);
 
     fromMatches = currentMatches.filter(function (match) {
       return !hasMatch(nextMatches, match);
@@ -740,26 +714,28 @@ function runTransitionHooks(routes, transition) {
 
   var query = Path.extractQuery(transition.path) || {};
 
-  return runTransitionFromHooks(fromMatches, transition).then(function () {
-    if (transition.isAborted)
-      return; // No need to continue.
+  runTransitionFromHooks(fromMatches, transition, function (error) {
+    if (error || transition.isAborted)
+      return callback(error);
 
-    return runTransitionToHooks(toMatches, transition, query).then(function () {
-      if (transition.isAborted)
-        return; // No need to continue.
+    runTransitionToHooks(toMatches, transition, query, function (error) {
+      if (error || transition.isAborted)
+        return callback(error);
 
-      var rootMatch = getRootMatch(nextMatches);
+      var matches = currentMatches.slice(0, -fromMatches.length).concat(toMatches);
+      var rootMatch = getRootMatch(matches);
       var params = (rootMatch && rootMatch.params) || {};
+      var routes = matches.map(function (match) {
+        return match.route;
+      });
 
-      return {
+      callback(null, {
         path: transition.path,
-        matches: nextMatches,
+        matches: matches,
+        activeRoutes: routes,
         activeParams: params,
-        activeQuery: query,
-        activeRoutes: nextMatches.map(function (match) {
-          return match.route;
-        })
-      };
+        activeQuery: query
+      });
     });
   });
 }
@@ -768,41 +744,76 @@ function runTransitionHooks(routes, transition) {
  * Calls the willTransitionFrom hook of all handlers in the given matches
  * serially in reverse with the transition object and the current instance of
  * the route's handler, so that the deepest nested handlers are called first.
- * Returns a promise that resolves after the last handler.
+ * Calls callback(error) when finished.
  */
-function runTransitionFromHooks(matches, transition) {
-  var promise = Promise.resolve();
-
-  reversedArray(matches).forEach(function (match) {
-    promise = promise.then(function () {
+function runTransitionFromHooks(matches, transition, callback) {
+  var hooks = reversedArray(matches).map(function (match) {
+    return function () {
       var handler = match.route.props.handler;
 
       if (!transition.isAborted && handler.willTransitionFrom)
         return handler.willTransitionFrom(transition, match.component);
-    });
+
+      var promise = transition.promise;
+      delete transition.promise;
+
+      return promise;
+    };
   });
 
-  return promise;
+  runHooks(hooks, callback);
 }
 
 /**
- * Calls the willTransitionTo hook of all handlers in the given matches serially
- * with the transition object and any params that apply to that handler. Returns
- * a promise that resolves after the last handler.
+ * Calls the willTransitionTo hook of all handlers in the given matches
+ * serially with the transition object and any params that apply to that
+ * handler. Calls callback(error) when finished.
  */
-function runTransitionToHooks(matches, transition, query) {
-  var promise = Promise.resolve();
-
-  matches.forEach(function (match) {
-    promise = promise.then(function () {
+function runTransitionToHooks(matches, transition, query, callback) {
+  var hooks = matches.map(function (match) {
+    return function () {
       var handler = match.route.props.handler;
 
       if (!transition.isAborted && handler.willTransitionTo)
-        return handler.willTransitionTo(transition, match.params, query);
-    });
+        handler.willTransitionTo(transition, match.params, query);
+
+      var promise = transition.promise;
+      delete transition.promise;
+
+      return promise;
+    };
   });
 
-  return promise;
+  runHooks(hooks, callback);
+}
+
+/**
+ * Runs all hook functions serially and calls callback(error) when finished.
+ * A hook may return a promise if it needs to execute asynchronously.
+ */
+function runHooks(hooks, callback) {
+  try {
+    var promise = hooks.reduce(function (promise, hook) {
+      // The first hook to use transition.wait makes the rest
+      // of the transition async from that point forward.
+      return promise ? promise.then(hook) : hook();
+    }, null);
+  } catch (error) {
+    return callback(error); // Sync error.
+  }
+
+  if (promise) {
+    // Use setTimeout to break the promise chain.
+    promise.then(function () {
+      setTimeout(callback);
+    }, function (error) {
+      setTimeout(function () {
+        callback(error);
+      });
+    });
+  } else {
+    callback();
+  }
 }
 
 /**
@@ -858,7 +869,7 @@ function reversedArray(array) {
 
 module.exports = Routes;
 
-},{"../actions/LocationActions":1,"../components/Route":6,"../locations/DefaultLocation":10,"../locations/HashLocation":11,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../stores/ActiveStore":17,"../stores/PathStore":18,"../stores/RouteStore":19,"../utils/Path":20,"../utils/Redirect":21,"../utils/Transition":22,"react/lib/copyProperties":40,"react/lib/warning":48,"when/lib/Promise":49}],8:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../components/Route":6,"../mixins/ActiveDelegate":15,"../mixins/PathListener":19,"../stores/RouteStore":21,"../utils/Path":22,"../utils/Promise":23,"../utils/Redirect":24,"../utils/Transition":25,"react/lib/ExecutionEnvironment":43,"react/lib/copyProperties":44,"react/lib/warning":52}],8:[function(_dereq_,module,exports){
 var copyProperties = _dereq_('react/lib/copyProperties');
 var Dispatcher = _dereq_('flux').Dispatcher;
 
@@ -878,7 +889,7 @@ var LocationDispatcher = copyProperties(new Dispatcher, {
 
 module.exports = LocationDispatcher;
 
-},{"flux":31,"react/lib/copyProperties":40}],9:[function(_dereq_,module,exports){
+},{"flux":35,"react/lib/copyProperties":44}],9:[function(_dereq_,module,exports){
 exports.goBack = _dereq_('./actions/LocationActions').goBack;
 exports.replaceWith = _dereq_('./actions/LocationActions').replaceWith;
 exports.transitionTo = _dereq_('./actions/LocationActions').transitionTo;
@@ -895,14 +906,16 @@ exports.AsyncState = _dereq_('./mixins/AsyncState');
 
 exports.makeHref = _dereq_('./utils/makeHref');
 
-},{"./actions/LocationActions":1,"./components/DefaultRoute":2,"./components/Link":3,"./components/NotFoundRoute":4,"./components/Redirect":5,"./components/Route":6,"./components/Routes":7,"./mixins/ActiveState":15,"./mixins/AsyncState":16,"./utils/makeHref":25}],10:[function(_dereq_,module,exports){
-module.exports = "production" === 'test'
+},{"./actions/LocationActions":1,"./components/DefaultRoute":2,"./components/Link":3,"./components/NotFoundRoute":4,"./components/Redirect":5,"./components/Route":6,"./components/Routes":7,"./mixins/ActiveState":16,"./mixins/AsyncState":17,"./utils/makeHref":29}],10:[function(_dereq_,module,exports){
+var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
+
+module.exports = "production" === 'test' || !canUseDOM
   ? _dereq_('./MemoryLocation')
   : _dereq_('./HashLocation');
 
-},{"./HashLocation":11,"./MemoryLocation":13}],11:[function(_dereq_,module,exports){
+},{"./HashLocation":11,"./MemoryLocation":13,"react/lib/ExecutionEnvironment":43}],11:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
-var ExecutionEnvironment = _dereq_('react/lib/ExecutionEnvironment');
+var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
 
 function getHashPath() {
@@ -934,7 +947,7 @@ var HashLocation = {
 
   setup: function (onChange) {
     invariant(
-      ExecutionEnvironment.canUseDOM,
+      canUseDOM,
       'You cannot use HashLocation in an environment with no DOM'
     );
 
@@ -979,9 +992,9 @@ var HashLocation = {
 
 module.exports = HashLocation;
 
-},{"../utils/getWindowPath":23,"react/lib/ExecutionEnvironment":39,"react/lib/invariant":42}],12:[function(_dereq_,module,exports){
+},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],12:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
-var ExecutionEnvironment = _dereq_('react/lib/ExecutionEnvironment');
+var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
 
 var _onChange;
@@ -993,7 +1006,7 @@ var HistoryLocation = {
 
   setup: function (onChange) {
     invariant(
-      ExecutionEnvironment.canUseDOM,
+      canUseDOM,
       'You cannot use HistoryLocation in an environment with no DOM'
     );
 
@@ -1038,7 +1051,7 @@ var HistoryLocation = {
 
 module.exports = HistoryLocation;
 
-},{"../utils/getWindowPath":23,"react/lib/ExecutionEnvironment":39,"react/lib/invariant":42}],13:[function(_dereq_,module,exports){
+},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],13:[function(_dereq_,module,exports){
 var warning = _dereq_('react/lib/warning');
 
 var _lastPath = null;
@@ -1088,9 +1101,9 @@ var MemoryLocation = {
 
 module.exports = MemoryLocation;
 
-},{"react/lib/warning":48}],14:[function(_dereq_,module,exports){
+},{"react/lib/warning":52}],14:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
-var ExecutionEnvironment = _dereq_('react/lib/ExecutionEnvironment');
+var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
 
 /**
@@ -1102,7 +1115,7 @@ var RefreshLocation = {
 
   setup: function () {
     invariant(
-      ExecutionEnvironment.canUseDOM,
+      canUseDOM,
       'You cannot use RefreshLocation in an environment with no DOM'
     );
   },
@@ -1129,18 +1142,87 @@ var RefreshLocation = {
 
 module.exports = RefreshLocation;
 
-},{"../utils/getWindowPath":23,"react/lib/ExecutionEnvironment":39,"react/lib/invariant":42}],15:[function(_dereq_,module,exports){
-var ActiveStore = _dereq_('../stores/ActiveStore');
+},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],15:[function(_dereq_,module,exports){
+var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
+var ChangeEmitter = _dereq_('./ChangeEmitter');
+
+function routeIsActive(activeRoutes, routeName) {
+  return activeRoutes.some(function (route) {
+    return route.props.name === routeName;
+  });
+}
+
+function paramsAreActive(activeParams, params) {
+  for (var property in params) {
+    if (activeParams[property] != params[property])
+      return false;
+  }
+
+  return true;
+}
+
+function queryIsActive(activeQuery, query) {
+  for (var property in query) {
+    if (activeQuery[property] != query[property])
+      return false;
+  }
+
+  return true;
+}
+
+/**
+ * A mixin for components that store the active state of routes, URL
+ * parameters, and query.
+ */
+var ActiveDelegate = {
+
+  mixins: [ ChangeEmitter ],
+
+  childContextTypes: {
+    activeDelegate: React.PropTypes.any.isRequired
+  },
+
+  getChildContext: function () {
+    return {
+      activeDelegate: this
+    };
+  },
+
+  /**
+   * Returns true if the route with the given name, URL parameters, and
+   * query are all currently active.
+   */
+  isActive: function (routeName, params, query) {
+    var activeRoutes = this.state.activeRoutes || [];
+    var activeParams = this.state.activeParams || {};
+    var activeQuery = this.state.activeQuery || {};
+
+    var isActive = routeIsActive(activeRoutes, routeName) && paramsAreActive(activeParams, params);
+
+    if (query)
+      return isActive && queryIsActive(activeQuery, query);
+
+    return isActive;
+  }
+
+};
+
+module.exports = ActiveDelegate;
+
+},{"./ChangeEmitter":18}],16:[function(_dereq_,module,exports){
+var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
+var ActiveDelegate = _dereq_('./ActiveDelegate');
 
 /**
  * A mixin for components that need to know about the routes, params,
  * and query that are currently active. Components that use it get two
  * things:
  *
- *   1. An `isActive` static method they can use to check if a route,
- *      params, and query are active.
- *   2. An `updateActiveState` instance method that is called when the
+ *   1. An `updateActiveState` method that is called when the
  *      active state changes.
+ *   2. An `isActive` method they can use to check if a route,
+ *      params, and query are active.
+ *
  *
  * Example:
  *
@@ -1156,7 +1238,7 @@ var ActiveStore = _dereq_('../stores/ActiveStore');
  *   
  *     updateActiveState: function () {
  *       this.setState({
- *         isActive: Tab.isActive(routeName, params, query)
+ *         isActive: this.isActive(routeName, params, query)
  *       })
  *     }
  *   
@@ -1164,39 +1246,48 @@ var ActiveStore = _dereq_('../stores/ActiveStore');
  */
 var ActiveState = {
 
-  statics: {
+  contextTypes: {
+    activeDelegate: React.PropTypes.any.isRequired
+  },
 
-    /**
-     * Returns true if the route with the given name, URL parameters, and query
-     * are all currently active.
-     */
-    isActive: ActiveStore.isActive
-
+  /**
+   * Returns this component's ActiveDelegate component.
+   */
+  getActiveDelegate: function () {
+    return this.context.activeDelegate;
   },
 
   componentWillMount: function () {
-    ActiveStore.addChangeListener(this.handleActiveStateChange);
-  },
-
-  componentDidMount: function () {
     if (this.updateActiveState)
       this.updateActiveState();
   },
 
+  componentDidMount: function () {
+    this.getActiveDelegate().addChangeListener(this.handleActiveStateChange);
+  },
+
   componentWillUnmount: function () {
-    ActiveStore.removeChangeListener(this.handleActiveStateChange);
+    this.getActiveDelegate().removeChangeListener(this.handleActiveStateChange);
   },
 
   handleActiveStateChange: function () {
-    if (this.isMounted() && typeof this.updateActiveState === 'function')
+    if (this.isMounted() && this.updateActiveState)
       this.updateActiveState();
+  },
+
+  /**
+   * Returns true if the route with the given name, URL parameters, and
+   * query are all currently active.
+   */
+  isActive: function (routeName, params, query) {
+    return this.getActiveDelegate().isActive(routeName, params, query);
   }
 
 };
 
 module.exports = ActiveState;
 
-},{"../stores/ActiveStore":17}],16:[function(_dereq_,module,exports){
+},{"./ActiveDelegate":15}],17:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var resolveAsyncState = _dereq_('../utils/resolveAsyncState');
 
@@ -1306,93 +1397,134 @@ var AsyncState = {
 
 module.exports = AsyncState;
 
-},{"../utils/resolveAsyncState":27}],17:[function(_dereq_,module,exports){
+},{"../utils/resolveAsyncState":31}],18:[function(_dereq_,module,exports){
+var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var EventEmitter = _dereq_('events').EventEmitter;
 
 var CHANGE_EVENT = 'change';
-var _events = new EventEmitter;
-
-_events.setMaxListeners(0);
-
-function notifyChange() {
-  _events.emit(CHANGE_EVENT);
-}
-
-var _activeRoutes = [];
-var _activeParams = {};
-var _activeQuery = {};
-
-function routeIsActive(routeName) {
-  return _activeRoutes.some(function (route) {
-    return route.props.name === routeName;
-  });
-}
-
-function paramsAreActive(params) {
-  for (var property in params) {
-    if (_activeParams[property] !== String(params[property]))
-      return false;
-  }
-
-  return true;
-}
-
-function queryIsActive(query) {
-  for (var property in query) {
-    if (_activeQuery[property] !== String(query[property]))
-      return false;
-  }
-
-  return true;
-}
 
 /**
- * The ActiveStore keeps track of which routes, URL and query parameters are
- * currently active on a page. <Link>s subscribe to the ActiveStore to know
- * whether or not they are active.
+ * A mixin for components that emit change events. ActiveDelegate uses
+ * this mixin to notify descendant ActiveState components when the
+ * active state changes.
  */
-var ActiveStore = {
+var ChangeEmitter = {
+
+  propTypes: {
+    maxChangeListeners: React.PropTypes.number.isRequired
+  },
+
+  getDefaultProps: function () {
+    return {
+      maxChangeListeners: 0
+    };
+  },
+
+  componentWillMount: function () {
+    this._events = new EventEmitter;
+    this._events.setMaxListeners(this.props.maxChangeListeners);
+  },
+
+  componentWillReceiveProps: function (nextProps) {
+    this._events.setMaxListeners(nextProps.maxChangeListeners);
+  },
+
+  componentWillUnmount: function () {
+    this._events.removeAllListeners();
+  },
 
   addChangeListener: function (listener) {
-    _events.on(CHANGE_EVENT, listener);
+    this._events.addListener(CHANGE_EVENT, listener);
   },
 
   removeChangeListener: function (listener) {
-    _events.removeListener(CHANGE_EVENT, listener);
+    this._events.removeListener(CHANGE_EVENT, listener);
   },
 
-  /**
-   * Updates the currently active state and notifies all listeners.
-   * This is automatically called by routes as they become active.
-   */
-  updateState: function (state) {
-    state = state || {};
-
-    _activeRoutes = state.activeRoutes || [];
-    _activeParams = state.activeParams || {};
-    _activeQuery = state.activeQuery || {};
-
-    notifyChange();
-  },
-
-  /**
-   * Returns true if the route with the given name, URL parameters, and query
-   * are all currently active.
-   */
-  isActive: function (routeName, params, query) {
-    var isActive = routeIsActive(routeName) && paramsAreActive(params);
-
-    if (query)
-      return isActive && queryIsActive(query);
-
-    return isActive;
+  emitChange: function () {
+    this._events.emit(CHANGE_EVENT);
   }
 
 };
 
-module.exports = ActiveStore;
+module.exports = ChangeEmitter;
 
-},{"events":30}],18:[function(_dereq_,module,exports){
+},{"events":34}],19:[function(_dereq_,module,exports){
+var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
+var DefaultLocation = _dereq_('../locations/DefaultLocation');
+var HashLocation = _dereq_('../locations/HashLocation');
+var HistoryLocation = _dereq_('../locations/HistoryLocation');
+var RefreshLocation = _dereq_('../locations/RefreshLocation');
+var PathStore = _dereq_('../stores/PathStore');
+
+/**
+ * A hash of { name, location } pairs.
+ */
+var NAMED_LOCATIONS = {
+  hash: HashLocation,
+  history: HistoryLocation,
+  refresh: RefreshLocation
+};
+
+/**
+ * A mixin for components that listen for changes to the current
+ * URL path.
+ */
+var PathListener = {
+
+  propTypes: {
+    location: function (props, propName, componentName) {
+      var location = props[propName];
+
+      if (typeof location === 'string' && !(location in NAMED_LOCATIONS))
+        return new Error('Unknown location "' + location + '", see ' + componentName);
+    }
+  },
+
+  getDefaultProps: function () {
+    return {
+      location: DefaultLocation
+    };
+  },
+
+  /**
+   * Gets the location object this component uses to watch for
+   * changes to the current URL path.
+   */
+  getLocation: function () {
+    var location = this.props.location;
+
+    if (typeof location === 'string')
+      return NAMED_LOCATIONS[location];
+
+    return location;
+  },
+
+  componentWillMount: function () {
+    PathStore.setup(this.getLocation());
+
+    if (this.updatePath)
+      this.updatePath(PathStore.getCurrentPath());
+  },
+
+  componentDidMount: function () {
+    PathStore.addChangeListener(this.handlePathChange);
+  },
+
+  componentWillUnmount: function () {
+    PathStore.removeChangeListener(this.handlePathChange);
+  },
+
+  handlePathChange: function () {
+    if (this.isMounted() && this.updatePath)
+      this.updatePath(PathStore.getCurrentPath());
+  }
+
+};
+
+module.exports = PathListener;
+
+},{"../locations/DefaultLocation":10,"../locations/HashLocation":11,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../stores/PathStore":20}],20:[function(_dereq_,module,exports){
 var warning = _dereq_('react/lib/warning');
 var EventEmitter = _dereq_('events').EventEmitter;
 var LocationActions = _dereq_('../actions/LocationActions');
@@ -1526,7 +1658,7 @@ var PathStore = {
 
 module.exports = PathStore;
 
-},{"../actions/LocationActions":1,"../dispatchers/LocationDispatcher":8,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../utils/supportsHistory":28,"events":30,"react/lib/warning":48}],19:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../dispatchers/LocationDispatcher":8,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../utils/supportsHistory":32,"events":34,"react/lib/warning":52}],21:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var invariant = _dereq_('react/lib/invariant');
 var warning = _dereq_('react/lib/warning');
@@ -1672,6 +1804,15 @@ var RouteStore = {
 
     return routes;
   },
+  
+  /**
+   * Unregisters many children routes at once.
+   */
+  unregisterChildren: function (children) {
+    React.Children.forEach(children, function (child) {
+      RouteStore.unregisterRoute(child)
+    });
+  },
 
   /**
    * Returns the Route object with the given name, if one exists.
@@ -1684,7 +1825,7 @@ var RouteStore = {
 
 module.exports = RouteStore;
 
-},{"../utils/Path":20,"react/lib/invariant":42,"react/lib/warning":48}],20:[function(_dereq_,module,exports){
+},{"../utils/Path":22,"react/lib/invariant":46,"react/lib/warning":52}],22:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var merge = _dereq_('qs/lib/utils').merge;
 var qs = _dereq_('qs');
@@ -1712,7 +1853,7 @@ function compilePattern(pattern) {
     var source = pattern.replace(paramMatcher, function (match, paramName) {
       if (paramName) {
         paramNames.push(paramName);
-        return '([^./?#]+)';
+        return '([^/?#]+)';
       } else if (match === '*') {
         paramNames.push('splat');
         return '(.*?)';
@@ -1852,7 +1993,15 @@ var Path = {
 
 module.exports = Path;
 
-},{"qs":34,"qs/lib/utils":38,"react/lib/invariant":42}],21:[function(_dereq_,module,exports){
+},{"qs":38,"qs/lib/utils":42,"react/lib/invariant":46}],23:[function(_dereq_,module,exports){
+var Promise = _dereq_('when/lib/Promise');
+
+// TODO: Use process.env.NODE_ENV check + envify to enable
+// when's promise monitor here when in dev.
+
+module.exports = Promise;
+
+},{"when/lib/Promise":53}],24:[function(_dereq_,module,exports){
 /**
  * Encapsulates a redirect to the given route.
  */
@@ -1864,10 +2013,11 @@ function Redirect(to, params, query) {
 
 module.exports = Redirect;
 
-},{}],22:[function(_dereq_,module,exports){
+},{}],25:[function(_dereq_,module,exports){
 var mixInto = _dereq_('react/lib/mixInto');
-var transitionTo = _dereq_('../actions/LocationActions').transitionTo;
+var Promise = _dereq_('./Promise');
 var Redirect = _dereq_('./Redirect');
+var replaceWith = _dereq_('../actions/LocationActions').replaceWith;
 
 /**
  * Encapsulates a transition to a given path.
@@ -1892,15 +2042,19 @@ mixInto(Transition, {
     this.abort(new Redirect(to, params, query));
   },
 
+  wait: function (value) {
+    this.promise = Promise.resolve(value);
+  },
+
   retry: function () {
-    transitionTo(this.path);
+    replaceWith(this.path);
   }
 
 });
 
 module.exports = Transition;
 
-},{"../actions/LocationActions":1,"./Redirect":21,"react/lib/mixInto":47}],23:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"./Promise":23,"./Redirect":24,"react/lib/mixInto":51}],26:[function(_dereq_,module,exports){
 /**
  * Returns the current URL path from `window.location`, including query string
  */
@@ -1911,10 +2065,23 @@ function getWindowPath() {
 module.exports = getWindowPath;
 
 
-},{}],24:[function(_dereq_,module,exports){
+},{}],27:[function(_dereq_,module,exports){
 module.exports = Function.prototype.call.bind(Object.prototype.hasOwnProperty);
 
-},{}],25:[function(_dereq_,module,exports){
+},{}],28:[function(_dereq_,module,exports){
+var ABSOLUTE_URL_FORMAT = /^https?:\/\//;
+
+/**
+ * Returns true if the given string contains an absolute URL
+ * according to http://tools.ietf.org/html/rfc3986#page-27.
+ */
+function isAbsoluteURL(string) {
+  return typeof string === 'string' && ABSOLUTE_URL_FORMAT.test(string);
+}
+
+module.exports = isAbsoluteURL;
+
+},{}],29:[function(_dereq_,module,exports){
 var HashLocation = _dereq_('../locations/HashLocation');
 var PathStore = _dereq_('../stores/PathStore');
 var makePath = _dereq_('./makePath');
@@ -1934,7 +2101,7 @@ function makeHref(to, params, query) {
 
 module.exports = makeHref;
 
-},{"../locations/HashLocation":11,"../stores/PathStore":18,"./makePath":26}],26:[function(_dereq_,module,exports){
+},{"../locations/HashLocation":11,"../stores/PathStore":20,"./makePath":30}],30:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var RouteStore = _dereq_('../stores/RouteStore');
 var Path = _dereq_('./Path');
@@ -1964,7 +2131,7 @@ function makePath(to, params, query) {
 
 module.exports = makePath;
 
-},{"../stores/RouteStore":19,"./Path":20,"react/lib/invariant":42}],27:[function(_dereq_,module,exports){
+},{"../stores/RouteStore":21,"./Path":22,"react/lib/invariant":46}],31:[function(_dereq_,module,exports){
 var Promise = _dereq_('when/lib/Promise');
 
 /**
@@ -1991,7 +2158,7 @@ function resolveAsyncState(asyncState, setState) {
 
 module.exports = resolveAsyncState;
 
-},{"when/lib/Promise":49}],28:[function(_dereq_,module,exports){
+},{"when/lib/Promise":53}],32:[function(_dereq_,module,exports){
 function supportsHistory() {
   /*! taken from modernizr
    * https://github.com/Modernizr/Modernizr/blob/master/LICENSE
@@ -2009,7 +2176,7 @@ function supportsHistory() {
 
 module.exports = supportsHistory;
 
-},{}],29:[function(_dereq_,module,exports){
+},{}],33:[function(_dereq_,module,exports){
 function withoutProperties(object, properties) {
   var result = {};
 
@@ -2023,7 +2190,7 @@ function withoutProperties(object, properties) {
 
 module.exports = withoutProperties;
 
-},{}],30:[function(_dereq_,module,exports){
+},{}],34:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2328,7 +2495,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],31:[function(_dereq_,module,exports){
+},{}],35:[function(_dereq_,module,exports){
 /**
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2340,7 +2507,7 @@ function isUndefined(arg) {
 
 module.exports.Dispatcher = _dereq_('./lib/Dispatcher')
 
-},{"./lib/Dispatcher":32}],32:[function(_dereq_,module,exports){
+},{"./lib/Dispatcher":36}],36:[function(_dereq_,module,exports){
 /*
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2352,6 +2519,8 @@ module.exports.Dispatcher = _dereq_('./lib/Dispatcher')
  * @providesModule Dispatcher
  * @typechecks
  */
+
+"use strict";
 
 var invariant = _dereq_('./invariant');
 
@@ -2450,7 +2619,7 @@ var _prefix = 'ID_';
  * `FlightPriceStore`.
  */
 
-  function Dispatcher() {"use strict";
+  function Dispatcher() {
     this.$Dispatcher_callbacks = {};
     this.$Dispatcher_isPending = {};
     this.$Dispatcher_isHandled = {};
@@ -2465,7 +2634,7 @@ var _prefix = 'ID_';
    * @param {function} callback
    * @return {string}
    */
-  Dispatcher.prototype.register=function(callback) {"use strict";
+  Dispatcher.prototype.register=function(callback) {
     var id = _prefix + _lastID++;
     this.$Dispatcher_callbacks[id] = callback;
     return id;
@@ -2476,7 +2645,7 @@ var _prefix = 'ID_';
    *
    * @param {string} id
    */
-  Dispatcher.prototype.unregister=function(id) {"use strict";
+  Dispatcher.prototype.unregister=function(id) {
     invariant(
       this.$Dispatcher_callbacks[id],
       'Dispatcher.unregister(...): `%s` does not map to a registered callback.',
@@ -2492,7 +2661,7 @@ var _prefix = 'ID_';
    *
    * @param {array<string>} ids
    */
-  Dispatcher.prototype.waitFor=function(ids) {"use strict";
+  Dispatcher.prototype.waitFor=function(ids) {
     invariant(
       this.$Dispatcher_isDispatching,
       'Dispatcher.waitFor(...): Must be invoked while dispatching.'
@@ -2522,7 +2691,7 @@ var _prefix = 'ID_';
    *
    * @param {object} payload
    */
-  Dispatcher.prototype.dispatch=function(payload) {"use strict";
+  Dispatcher.prototype.dispatch=function(payload) {
     invariant(
       !this.$Dispatcher_isDispatching,
       'Dispatch.dispatch(...): Cannot dispatch in the middle of a dispatch.'
@@ -2545,7 +2714,7 @@ var _prefix = 'ID_';
    *
    * @return {boolean}
    */
-  Dispatcher.prototype.isDispatching=function() {"use strict";
+  Dispatcher.prototype.isDispatching=function() {
     return this.$Dispatcher_isDispatching;
   };
 
@@ -2556,7 +2725,7 @@ var _prefix = 'ID_';
    * @param {string} id
    * @internal
    */
-  Dispatcher.prototype.$Dispatcher_invokeCallback=function(id) {"use strict";
+  Dispatcher.prototype.$Dispatcher_invokeCallback=function(id) {
     this.$Dispatcher_isPending[id] = true;
     this.$Dispatcher_callbacks[id](this.$Dispatcher_pendingPayload);
     this.$Dispatcher_isHandled[id] = true;
@@ -2568,7 +2737,7 @@ var _prefix = 'ID_';
    * @param {object} payload
    * @internal
    */
-  Dispatcher.prototype.$Dispatcher_startDispatching=function(payload) {"use strict";
+  Dispatcher.prototype.$Dispatcher_startDispatching=function(payload) {
     for (var id in this.$Dispatcher_callbacks) {
       this.$Dispatcher_isPending[id] = false;
       this.$Dispatcher_isHandled[id] = false;
@@ -2582,7 +2751,7 @@ var _prefix = 'ID_';
    *
    * @internal
    */
-  Dispatcher.prototype.$Dispatcher_stopDispatching=function() {"use strict";
+  Dispatcher.prototype.$Dispatcher_stopDispatching=function() {
     this.$Dispatcher_pendingPayload = null;
     this.$Dispatcher_isDispatching = false;
   };
@@ -2590,7 +2759,7 @@ var _prefix = 'ID_';
 
 module.exports = Dispatcher;
 
-},{"./invariant":33}],33:[function(_dereq_,module,exports){
+},{"./invariant":37}],37:[function(_dereq_,module,exports){
 /**
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2645,10 +2814,10 @@ var invariant = function(condition, format, a, b, c, d, e, f) {
 
 module.exports = invariant;
 
-},{}],34:[function(_dereq_,module,exports){
+},{}],38:[function(_dereq_,module,exports){
 module.exports = _dereq_('./lib');
 
-},{"./lib":35}],35:[function(_dereq_,module,exports){
+},{"./lib":39}],39:[function(_dereq_,module,exports){
 // Load modules
 
 var Stringify = _dereq_('./stringify');
@@ -2665,7 +2834,7 @@ module.exports = {
     parse: Parse
 };
 
-},{"./parse":36,"./stringify":37}],36:[function(_dereq_,module,exports){
+},{"./parse":40,"./stringify":41}],40:[function(_dereq_,module,exports){
 // Load modules
 
 var Utils = _dereq_('./utils');
@@ -2821,7 +2990,7 @@ module.exports = function (str, options) {
     return Utils.compact(obj);
 };
 
-},{"./utils":38}],37:[function(_dereq_,module,exports){
+},{"./utils":42}],41:[function(_dereq_,module,exports){
 // Load modules
 
 var Utils = _dereq_('./utils');
@@ -2881,7 +3050,7 @@ module.exports = function (obj, options) {
     return keys.join(delimiter);
 };
 
-},{"./utils":38}],38:[function(_dereq_,module,exports){
+},{"./utils":42}],42:[function(_dereq_,module,exports){
 // Load modules
 
 
@@ -3022,7 +3191,7 @@ exports.isBuffer = function (obj) {
     }
 };
 
-},{}],39:[function(_dereq_,module,exports){
+},{}],43:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3074,7 +3243,7 @@ var ExecutionEnvironment = {
 
 module.exports = ExecutionEnvironment;
 
-},{}],40:[function(_dereq_,module,exports){
+},{}],44:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3130,7 +3299,7 @@ function copyProperties(obj, a, b, c, d, e, f) {
 
 module.exports = copyProperties;
 
-},{}],41:[function(_dereq_,module,exports){
+},{}],45:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3175,7 +3344,7 @@ copyProperties(emptyFunction, {
 
 module.exports = emptyFunction;
 
-},{"./copyProperties":40}],42:[function(_dereq_,module,exports){
+},{"./copyProperties":44}],46:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3237,7 +3406,7 @@ var invariant = function(condition, format, a, b, c, d, e, f) {
 
 module.exports = invariant;
 
-},{}],43:[function(_dereq_,module,exports){
+},{}],47:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3297,7 +3466,7 @@ var keyMirror = function(obj) {
 
 module.exports = keyMirror;
 
-},{"./invariant":42}],44:[function(_dereq_,module,exports){
+},{"./invariant":46}],48:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3336,7 +3505,7 @@ var merge = function(one, two) {
 
 module.exports = merge;
 
-},{"./mergeInto":46}],45:[function(_dereq_,module,exports){
+},{"./mergeInto":50}],49:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3485,7 +3654,7 @@ var mergeHelpers = {
 
 module.exports = mergeHelpers;
 
-},{"./invariant":42,"./keyMirror":43}],46:[function(_dereq_,module,exports){
+},{"./invariant":46,"./keyMirror":47}],50:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3533,7 +3702,7 @@ function mergeInto(one, two) {
 
 module.exports = mergeInto;
 
-},{"./mergeHelpers":45}],47:[function(_dereq_,module,exports){
+},{"./mergeHelpers":49}],51:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3569,7 +3738,7 @@ var mixInto = function(constructor, methodBag) {
 
 module.exports = mixInto;
 
-},{}],48:[function(_dereq_,module,exports){
+},{}],52:[function(_dereq_,module,exports){
 /**
  * Copyright 2014 Facebook, Inc.
  *
@@ -3619,7 +3788,7 @@ if ("production" !== "production") {
 
 module.exports = warning;
 
-},{"./emptyFunction":41}],49:[function(_dereq_,module,exports){
+},{"./emptyFunction":45}],53:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3638,7 +3807,7 @@ define(function (_dereq_) {
 });
 })(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(_dereq_); });
 
-},{"./Scheduler":51,"./async":52,"./makePromise":53}],50:[function(_dereq_,module,exports){
+},{"./Scheduler":55,"./async":56,"./makePromise":57}],54:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3710,7 +3879,7 @@ define(function() {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
 
-},{}],51:[function(_dereq_,module,exports){
+},{}],55:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3794,7 +3963,7 @@ define(function(_dereq_) {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(_dereq_); }));
 
-},{"./Queue":50}],52:[function(_dereq_,module,exports){
+},{"./Queue":54}],56:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3839,10 +4008,20 @@ define(function(_dereq_) {
 
 	} else {
 		nextTick = (function(cjsRequire) {
+			var vertx;
 			try {
 				// vert.x 1.x || 2.x
-				return cjsRequire('vertx').runOnLoop || cjsRequire('vertx').runOnContext;
+				vertx = cjsRequire('vertx');
 			} catch (ignore) {}
+
+			if (vertx) {
+				if (typeof vertx.runOnLoop === 'function') {
+					return vertx.runOnLoop;
+				}
+				if (typeof vertx.runOnContext === 'function') {
+					return vertx.runOnContext;
+				}
+			}
 
 			// capture setTimeout to avoid being caught by fake timers
 			// used in time based tests
@@ -3857,7 +4036,7 @@ define(function(_dereq_) {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(_dereq_); }));
 
-},{}],53:[function(_dereq_,module,exports){
+},{}],57:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3988,10 +4167,12 @@ define(function() {
 		 */
 		Promise.prototype.then = function(onFulfilled, onRejected) {
 			var parent = this._handler;
+			var state = parent.join().state();
 
-			if (typeof onFulfilled !== 'function' && parent.join().state() > 0) {
+			if ((typeof onFulfilled !== 'function' && state > 0) ||
+				(typeof onRejected !== 'function' && state < 0)) {
 				// Short circuit: value will not change, simply share handler
-				return new Promise(Handler, parent);
+				return new this.constructor(Handler, parent);
 			}
 
 			var p = this._beget();
@@ -4052,9 +4233,7 @@ define(function() {
 				}
 
 				if (maybeThenable(x)) {
-					h = isPromise(x)
-						? x._handler.join()
-						: getHandlerUntrusted(x);
+					h = getHandlerMaybeThenable(x);
 
 					s = h.state();
 					if (s === 0) {
@@ -4063,6 +4242,7 @@ define(function() {
 						results[i] = h.value;
 						--pending;
 					} else {
+						unreportRemaining(promises, i+1, h);
 						resolver.become(h);
 						break;
 					}
@@ -4084,6 +4264,20 @@ define(function() {
 				this[i] = x;
 				if(--pending === 0) {
 					resolver.become(new Fulfilled(this));
+				}
+			}
+		}
+
+		function unreportRemaining(promises, start, rejectedHandler) {
+			var i, h, x;
+			for(i=start; i<promises.length; ++i) {
+				x = promises[i];
+				if(maybeThenable(x)) {
+					h = getHandlerMaybeThenable(x);
+
+					if(h !== rejectedHandler) {
+						h.visit(h, void 0, h._unreport);
+					}
 				}
 			}
 		}
@@ -4133,6 +4327,16 @@ define(function() {
 				return x._handler.join();
 			}
 			return maybeThenable(x) ? getHandlerUntrusted(x) : new Fulfilled(x);
+		}
+
+		/**
+		 * Get a handler for thenable x.
+		 * NOTE: You must only call this if maybeThenable(x) == true
+		 * @param {object|function|Promise} x
+		 * @returns {object} handler
+		 */
+		function getHandlerMaybeThenable(x) {
+			return isPromise(x) ? x._handler.join() : getHandlerUntrusted(x);
 		}
 
 		/**
