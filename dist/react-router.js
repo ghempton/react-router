@@ -1,5 +1,10 @@
 !function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.ReactRouter=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
+var supportsHistory = _dereq_('../utils/supportsHistory');
+var HistoryLocation = _dereq_('../locations/HistoryLocation');
+var RefreshLocation = _dereq_('../locations/RefreshLocation');
 var LocationDispatcher = _dereq_('../dispatchers/LocationDispatcher');
+var ActionTypes = _dereq_('../constants/ActionTypes');
+var warning = _dereq_('react/lib/warning');
 var isAbsoluteURL = _dereq_('../utils/isAbsoluteURL');
 var makePath = _dereq_('../utils/makePath');
 
@@ -7,15 +12,86 @@ function loadURL(url) {
   window.location = url;
 }
 
+var _location = null;
+var _isDispatching = false;
+var _previousPath = null;
+
+function dispatchAction(actionType, operation) {
+  if (_isDispatching)
+    throw new Error('Cannot handle ' + actionType + ' in the middle of another action.');
+
+  _isDispatching = true;
+
+  var scrollPosition = {
+    x: window.scrollX,
+    y: window.scrollY
+  };
+
+  if (typeof operation === 'function')
+    operation(_location);
+
+  var path = _location.getCurrentPath();
+  LocationDispatcher.handleViewAction({
+    type: actionType,
+    path: path,
+    scrollPosition: scrollPosition
+  });
+
+  _isDispatching = false;
+  _previousPath = path;
+}
+
+function handleChange() {
+  var path = _location.getCurrentPath();
+
+  // Ignore changes inside or caused by dispatchAction
+  if (!_isDispatching && path !== _previousPath) {
+    dispatchAction(ActionTypes.POP);
+  }
+}
+
 /**
  * Actions that modify the URL.
  */
 var LocationActions = {
 
-  PUSH: 'push',
-  REPLACE: 'replace',
-  POP: 'pop',
-  UPDATE_SCROLL: 'update-scroll',
+  getLocation: function () {
+    return _location;
+  },
+
+  setup: function (location) {
+    // When using HistoryLocation, automatically fallback
+    // to RefreshLocation in browsers that do not support
+    // the HTML5 history API.
+    if (location === HistoryLocation && !supportsHistory())
+      location = RefreshLocation;
+
+    if (_location !== null) {
+      warning(
+        _location === location,
+        'Cannot use location %s, already using %s', location, _location
+      );
+      return;
+    }
+
+    _location = location;
+
+    if (_location !== null) {
+      dispatchAction(ActionTypes.SETUP, function (location) {
+        if (typeof location.setup === 'function')
+          location.setup(handleChange);
+      });
+    }
+  },
+
+  teardown: function () {
+    if (_location !== null) {
+      if (typeof _location.teardown === 'function')
+        _location.teardown();
+
+      _location = null;
+    }
+  },
 
   /**
    * Transitions to the URL specified in the arguments by pushing
@@ -25,9 +101,9 @@ var LocationActions = {
     if (isAbsoluteURL(to)) {
       loadURL(to);
     } else {
-      LocationDispatcher.handleViewAction({
-        type: LocationActions.PUSH,
-        path: makePath(to, params, query)
+      dispatchAction(ActionTypes.PUSH, function (location) {
+        var path = makePath(to, params, query);
+        location.push(path);
       });
     }
   },
@@ -40,9 +116,9 @@ var LocationActions = {
     if (isAbsoluteURL(to)) {
       loadURL(to);
     } else {
-      LocationDispatcher.handleViewAction({
-        type: LocationActions.REPLACE,
-        path: makePath(to, params, query)
+      dispatchAction(ActionTypes.REPLACE, function (location) {
+        var path = makePath(to, params, query);
+        location.replace(path);
       });
     }
   },
@@ -51,18 +127,8 @@ var LocationActions = {
    * Transitions to the previous URL.
    */
   goBack: function () {
-    LocationDispatcher.handleViewAction({
-      type: LocationActions.POP
-    });
-  },
-
-  /**
-   * Updates the window's scroll position to the last known position
-   * for the current URL path.
-   */
-  updateScroll: function () {
-    LocationDispatcher.handleViewAction({
-      type: LocationActions.UPDATE_SCROLL
+    dispatchAction(ActionTypes.POP, function (location) {
+      location.pop();
     });
   }
 
@@ -70,7 +136,7 @@ var LocationActions = {
 
 module.exports = LocationActions;
 
-},{"../dispatchers/LocationDispatcher":8,"../utils/isAbsoluteURL":28,"../utils/makePath":30}],2:[function(_dereq_,module,exports){
+},{"../constants/ActionTypes":8,"../dispatchers/LocationDispatcher":9,"../locations/HistoryLocation":13,"../locations/RefreshLocation":15,"../utils/isAbsoluteURL":33,"../utils/makePath":35,"../utils/supportsHistory":37,"react/lib/warning":57}],2:[function(_dereq_,module,exports){
 var merge = _dereq_('react/lib/merge');
 var Route = _dereq_('./Route');
 
@@ -91,7 +157,7 @@ function DefaultRoute(props) {
 
 module.exports = DefaultRoute;
 
-},{"./Route":6,"react/lib/merge":48}],3:[function(_dereq_,module,exports){
+},{"./Route":6,"react/lib/merge":53}],3:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var ActiveState = _dereq_('../mixins/ActiveState');
 var transitionTo = _dereq_('../actions/LocationActions').transitionTo;
@@ -262,7 +328,7 @@ var Link = React.createClass({
 
 module.exports = Link;
 
-},{"../actions/LocationActions":1,"../mixins/ActiveState":16,"../utils/hasOwnProperty":27,"../utils/makeHref":29,"../utils/withoutProperties":33,"react/lib/warning":52}],4:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../mixins/ActiveState":17,"../utils/hasOwnProperty":32,"../utils/makeHref":34,"../utils/withoutProperties":38,"react/lib/warning":57}],4:[function(_dereq_,module,exports){
 var merge = _dereq_('react/lib/merge');
 var Route = _dereq_('./Route');
 
@@ -284,7 +350,7 @@ function NotFoundRoute(props) {
 
 module.exports = NotFoundRoute;
 
-},{"./Route":6,"react/lib/merge":48}],5:[function(_dereq_,module,exports){
+},{"./Route":6,"react/lib/merge":53}],5:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var Route = _dereq_('./Route');
 
@@ -419,7 +485,7 @@ var Route = React.createClass({
 
 module.exports = Route;
 
-},{"../utils/withoutProperties":33}],7:[function(_dereq_,module,exports){
+},{"../utils/withoutProperties":38}],7:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var warning = _dereq_('react/lib/warning');
 var copyProperties = _dereq_('react/lib/copyProperties');
@@ -429,6 +495,7 @@ var Route = _dereq_('../components/Route');
 var ActiveDelegate = _dereq_('../mixins/ActiveDelegate');
 var PathListener = _dereq_('../mixins/PathListener');
 var RouteStore = _dereq_('../stores/RouteStore');
+var ScrollStore = _dereq_('../stores/ScrollStore');
 var Path = _dereq_('../utils/Path');
 var Promise = _dereq_('../utils/Promise');
 var Redirect = _dereq_('../utils/Redirect');
@@ -473,9 +540,11 @@ function maybeUpdateScroll(routes) {
     return;
 
   var currentRoute = routes.getCurrentRoute();
+  var scrollPosition = ScrollStore.getScrollPosition();
 
-  if (!routes.props.preserveScrollPosition && currentRoute && !currentRoute.props.preserveScrollPosition)
-    LocationActions.updateScroll();
+  if (currentRoute && scrollPosition) {
+    window.scrollTo(scrollPosition.x, scrollPosition.y);
+  }
 }
 
 /**
@@ -722,7 +791,7 @@ function computeNextState(component, transition, callback) {
       if (error || transition.isAborted)
         return callback(error);
 
-      var matches = currentMatches.slice(0, -fromMatches.length).concat(toMatches);
+      var matches = currentMatches.slice(0, currentMatches.length - fromMatches.length).concat(toMatches);
       var rootMatch = getRootMatch(matches);
       var params = (rootMatch && rootMatch.params) || {};
       var routes = matches.map(function (match) {
@@ -869,7 +938,19 @@ function reversedArray(array) {
 
 module.exports = Routes;
 
-},{"../actions/LocationActions":1,"../components/Route":6,"../mixins/ActiveDelegate":15,"../mixins/PathListener":19,"../stores/RouteStore":21,"../utils/Path":22,"../utils/Promise":23,"../utils/Redirect":24,"../utils/Transition":25,"react/lib/ExecutionEnvironment":43,"react/lib/copyProperties":44,"react/lib/warning":52}],8:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../components/Route":6,"../mixins/ActiveDelegate":16,"../mixins/PathListener":20,"../stores/RouteStore":22,"../stores/ScrollStore":23,"../utils/Path":27,"../utils/Promise":28,"../utils/Redirect":29,"../utils/Transition":30,"react/lib/ExecutionEnvironment":48,"react/lib/copyProperties":49,"react/lib/warning":57}],8:[function(_dereq_,module,exports){
+var keyMirror = _dereq_('react/lib/keyMirror');
+
+var ActionTypes = keyMirror({
+  SETUP: null,
+  PUSH: null,
+  REPLACE: null,
+  POP: null
+});
+
+module.exports = ActionTypes;
+
+},{"react/lib/keyMirror":52}],9:[function(_dereq_,module,exports){
 var copyProperties = _dereq_('react/lib/copyProperties');
 var Dispatcher = _dereq_('flux').Dispatcher;
 
@@ -889,7 +970,7 @@ var LocationDispatcher = copyProperties(new Dispatcher, {
 
 module.exports = LocationDispatcher;
 
-},{"flux":35,"react/lib/copyProperties":44}],9:[function(_dereq_,module,exports){
+},{"flux":40,"react/lib/copyProperties":49}],10:[function(_dereq_,module,exports){
 exports.goBack = _dereq_('./actions/LocationActions').goBack;
 exports.replaceWith = _dereq_('./actions/LocationActions').replaceWith;
 exports.transitionTo = _dereq_('./actions/LocationActions').transitionTo;
@@ -906,14 +987,14 @@ exports.AsyncState = _dereq_('./mixins/AsyncState');
 
 exports.makeHref = _dereq_('./utils/makeHref');
 
-},{"./actions/LocationActions":1,"./components/DefaultRoute":2,"./components/Link":3,"./components/NotFoundRoute":4,"./components/Redirect":5,"./components/Route":6,"./components/Routes":7,"./mixins/ActiveState":16,"./mixins/AsyncState":17,"./utils/makeHref":29}],10:[function(_dereq_,module,exports){
+},{"./actions/LocationActions":1,"./components/DefaultRoute":2,"./components/Link":3,"./components/NotFoundRoute":4,"./components/Redirect":5,"./components/Route":6,"./components/Routes":7,"./mixins/ActiveState":17,"./mixins/AsyncState":18,"./utils/makeHref":34}],11:[function(_dereq_,module,exports){
 var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 
 module.exports = "production" === 'test' || !canUseDOM
   ? _dereq_('./MemoryLocation')
   : _dereq_('./HashLocation');
 
-},{"./HashLocation":11,"./MemoryLocation":13,"react/lib/ExecutionEnvironment":43}],11:[function(_dereq_,module,exports){
+},{"./HashLocation":12,"./MemoryLocation":14,"react/lib/ExecutionEnvironment":48}],12:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
@@ -992,7 +1073,7 @@ var HashLocation = {
 
 module.exports = HashLocation;
 
-},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],12:[function(_dereq_,module,exports){
+},{"../utils/getWindowPath":31,"react/lib/ExecutionEnvironment":48,"react/lib/invariant":51}],13:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
@@ -1029,12 +1110,10 @@ var HistoryLocation = {
 
   push: function (path) {
     window.history.pushState({ path: path }, '', path);
-    _onChange();
   },
 
   replace: function (path) {
     window.history.replaceState({ path: path }, '', path);
-    _onChange();
   },
 
   pop: function () {
@@ -1051,31 +1130,24 @@ var HistoryLocation = {
 
 module.exports = HistoryLocation;
 
-},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],13:[function(_dereq_,module,exports){
+},{"../utils/getWindowPath":31,"react/lib/ExecutionEnvironment":48,"react/lib/invariant":51}],14:[function(_dereq_,module,exports){
 var warning = _dereq_('react/lib/warning');
 
 var _lastPath = null;
 var _currentPath = null;
-var _onChange;
 
 /**
  * A Location that does not require a DOM.
  */
 var MemoryLocation = {
 
-  setup: function (onChange) {
-    _onChange = onChange;
-  },
-
   push: function (path) {
     _lastPath = _currentPath;
     _currentPath = path;
-    _onChange();
   },
 
   replace: function (path) {
     _currentPath = path;
-    _onChange();
   },
 
   pop: function () {
@@ -1086,7 +1158,6 @@ var MemoryLocation = {
 
     _currentPath = _lastPath;
     _lastPath = null;
-    _onChange();
   },
 
   getCurrentPath: function () {
@@ -1101,7 +1172,7 @@ var MemoryLocation = {
 
 module.exports = MemoryLocation;
 
-},{"react/lib/warning":52}],14:[function(_dereq_,module,exports){
+},{"react/lib/warning":57}],15:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var canUseDOM = _dereq_('react/lib/ExecutionEnvironment').canUseDOM;
 var getWindowPath = _dereq_('../utils/getWindowPath');
@@ -1142,7 +1213,7 @@ var RefreshLocation = {
 
 module.exports = RefreshLocation;
 
-},{"../utils/getWindowPath":26,"react/lib/ExecutionEnvironment":43,"react/lib/invariant":46}],15:[function(_dereq_,module,exports){
+},{"../utils/getWindowPath":31,"react/lib/ExecutionEnvironment":48,"react/lib/invariant":51}],16:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var ChangeEmitter = _dereq_('./ChangeEmitter');
 
@@ -1153,19 +1224,17 @@ function routeIsActive(activeRoutes, routeName) {
 }
 
 function paramsAreActive(activeParams, params) {
-  for (var property in params) {
-    if (activeParams[property] != params[property])
+  for (var property in params)
+    if (String(activeParams[property]) !== String(params[property]))
       return false;
-  }
 
   return true;
 }
 
 function queryIsActive(activeQuery, query) {
-  for (var property in query) {
-    if (activeQuery[property] != query[property])
+  for (var property in query)
+    if (String(activeQuery[property]) !== String(query[property]))
       return false;
-  }
 
   return true;
 }
@@ -1209,7 +1278,7 @@ var ActiveDelegate = {
 
 module.exports = ActiveDelegate;
 
-},{"./ChangeEmitter":18}],16:[function(_dereq_,module,exports){
+},{"./ChangeEmitter":19}],17:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var ActiveDelegate = _dereq_('./ActiveDelegate');
 
@@ -1287,7 +1356,7 @@ var ActiveState = {
 
 module.exports = ActiveState;
 
-},{"./ActiveDelegate":15}],17:[function(_dereq_,module,exports){
+},{"./ActiveDelegate":16}],18:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var resolveAsyncState = _dereq_('../utils/resolveAsyncState');
 
@@ -1397,7 +1466,7 @@ var AsyncState = {
 
 module.exports = AsyncState;
 
-},{"../utils/resolveAsyncState":31}],18:[function(_dereq_,module,exports){
+},{"../utils/resolveAsyncState":36}],19:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var EventEmitter = _dereq_('events').EventEmitter;
 
@@ -1449,13 +1518,17 @@ var ChangeEmitter = {
 
 module.exports = ChangeEmitter;
 
-},{"events":34}],19:[function(_dereq_,module,exports){
-var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
+},{"events":39}],20:[function(_dereq_,module,exports){
+var LocationActions = _dereq_('../actions/LocationActions');
 var DefaultLocation = _dereq_('../locations/DefaultLocation');
 var HashLocation = _dereq_('../locations/HashLocation');
 var HistoryLocation = _dereq_('../locations/HistoryLocation');
 var RefreshLocation = _dereq_('../locations/RefreshLocation');
+var NoneStrategy = _dereq_('../strategies/NoneStrategy');
+var ScrollToTopStrategy = _dereq_('../strategies/ScrollToTopStrategy');
+var ImitateBrowserStrategy = _dereq_('../strategies/ImitateBrowserStrategy');
 var PathStore = _dereq_('../stores/PathStore');
+var ScrollStore = _dereq_('../stores/ScrollStore');
 
 /**
  * A hash of { name, location } pairs.
@@ -1464,6 +1537,15 @@ var NAMED_LOCATIONS = {
   hash: HashLocation,
   history: HistoryLocation,
   refresh: RefreshLocation
+};
+
+/**
+ * A hash of { name, scrollStrategy } pairs.
+ */
+var NAMED_SCROLL_STRATEGIES = {
+  none: NoneStrategy,
+  scrollToTop: ScrollToTopStrategy,
+  imitateBrowser: ImitateBrowserStrategy
 };
 
 /**
@@ -1478,12 +1560,20 @@ var PathListener = {
 
       if (typeof location === 'string' && !(location in NAMED_LOCATIONS))
         return new Error('Unknown location "' + location + '", see ' + componentName);
-    }
+    },
+
+    scrollStrategy: function (props, propName, componentName) {
+      var scrollStrategy = props[propName];
+
+      if (typeof scrollStrategy === 'string' && !(scrollStrategy in NAMED_SCROLL_STRATEGIES))
+        return new Error('Unknown scrollStrategy "' + scrollStrategy + '", see ' + componentName);
+    },
   },
 
   getDefaultProps: function () {
     return {
-      location: DefaultLocation
+      location: DefaultLocation,
+      scrollStrategy: ScrollToTopStrategy
     };
   },
 
@@ -1500,8 +1590,22 @@ var PathListener = {
     return location;
   },
 
+  /**
+   * Gets the scroll strategy object this component uses to
+   * restore scroll position when the path changes.
+   */
+  getScrollStrategy: function () {
+    var scrollStrategy = this.props.scrollStrategy;
+
+    if (typeof scrollStrategy === 'string')
+      return NAMED_SCROLL_STRATEGIES[scrollStrategy];
+
+    return scrollStrategy;
+  },
+
   componentWillMount: function () {
-    PathStore.setup(this.getLocation());
+    ScrollStore.setup(this.getScrollStrategy());
+    LocationActions.setup(this.getLocation());
 
     if (this.updatePath)
       this.updatePath(PathStore.getCurrentPath());
@@ -1513,6 +1617,8 @@ var PathListener = {
 
   componentWillUnmount: function () {
     PathStore.removeChangeListener(this.handlePathChange);
+    ScrollStore.teardown();
+    LocationActions.teardown();
   },
 
   handlePathChange: function () {
@@ -1524,37 +1630,19 @@ var PathListener = {
 
 module.exports = PathListener;
 
-},{"../locations/DefaultLocation":10,"../locations/HashLocation":11,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../stores/PathStore":20}],20:[function(_dereq_,module,exports){
-var warning = _dereq_('react/lib/warning');
+},{"../actions/LocationActions":1,"../locations/DefaultLocation":11,"../locations/HashLocation":12,"../locations/HistoryLocation":13,"../locations/RefreshLocation":15,"../stores/PathStore":21,"../stores/ScrollStore":23,"../strategies/ImitateBrowserStrategy":24,"../strategies/NoneStrategy":25,"../strategies/ScrollToTopStrategy":26}],21:[function(_dereq_,module,exports){
 var EventEmitter = _dereq_('events').EventEmitter;
-var LocationActions = _dereq_('../actions/LocationActions');
+var ActionTypes = _dereq_('../constants/ActionTypes');
 var LocationDispatcher = _dereq_('../dispatchers/LocationDispatcher');
-var supportsHistory = _dereq_('../utils/supportsHistory');
-var HistoryLocation = _dereq_('../locations/HistoryLocation');
-var RefreshLocation = _dereq_('../locations/RefreshLocation');
+var ScrollStore = _dereq_('./ScrollStore');
 
 var CHANGE_EVENT = 'change';
 var _events = new EventEmitter;
+var _currentPath = null;
 
 function notifyChange() {
   _events.emit(CHANGE_EVENT);
 }
-
-var _scrollPositions = {};
-
-function recordScrollPosition(path) {
-  _scrollPositions[path] = {
-    x: window.scrollX,
-    y: window.scrollY
-  };
-}
-
-function updateScrollPosition(path) {
-  var p = PathStore.getScrollPosition(path);
-  window.scrollTo(p.x, p.y);
-}
-
-var _location;
 
 /**
  * The PathStore keeps track of the current URL path and manages
@@ -1568,88 +1656,30 @@ var PathStore = {
 
   removeChangeListener: function (listener) {
     _events.removeListener(CHANGE_EVENT, listener);
-
-    // Automatically teardown when the last listener is removed.
-    if (EventEmitter.listenerCount(_events, CHANGE_EVENT) === 0)
-      PathStore.teardown();
-  },
-
-  setup: function (location) {
-    // When using HistoryLocation, automatically fallback
-    // to RefreshLocation in browsers that do not support
-    // the HTML5 history API.
-    if (location === HistoryLocation && !supportsHistory())
-      location = RefreshLocation;
-
-    if (_location == null) {
-      _location = location;
-
-      if (_location && typeof _location.setup === 'function')
-        _location.setup(notifyChange);
-    } else {
-      warning(
-        _location === location,
-        'Cannot use location %s, already using %s', location, _location
-      );
-    }
-  },
-
-  teardown: function () {
-    _events.removeAllListeners(CHANGE_EVENT);
-
-    if (_location && typeof _location.teardown === 'function')
-      _location.teardown();
-
-    _location = null;
-  },
-
-  /**
-   * Returns the location object currently in use.
-   */
-  getLocation: function () {
-    return _location;
   },
 
   /**
    * Returns the current URL path.
    */
   getCurrentPath: function () {
-    return _location.getCurrentPath();
-  },
-
-  /**
-   * Returns the last known scroll position for the given path.
-   */
-  getScrollPosition: function (path) {
-    return _scrollPositions[path] || { x: 0, y: 0 };
+    return _currentPath;
   },
 
   dispatchToken: LocationDispatcher.register(function (payload) {
+    LocationDispatcher.waitFor([ScrollStore.dispatchToken]);
+
     var action = payload.action;
-    var currentPath = _location.getCurrentPath();
+    if (_currentPath === action.path) {
+      return;
+    }
 
     switch (action.type) {
-      case LocationActions.PUSH:
-        if (currentPath !== action.path) {
-          recordScrollPosition(currentPath);
-          _location.push(action.path);
-        }
-        break;
-
-      case LocationActions.REPLACE:
-        if (currentPath !== action.path) {
-          recordScrollPosition(currentPath);
-          _location.replace(action.path);
-        }
-        break;
-
-      case LocationActions.POP:
-        recordScrollPosition(currentPath);
-        _location.pop();
-        break;
-
-      case LocationActions.UPDATE_SCROLL:
-        updateScrollPosition(currentPath);
+      case ActionTypes.SETUP:
+      case ActionTypes.PUSH:
+      case ActionTypes.REPLACE:
+      case ActionTypes.POP:
+        _currentPath = action.path;
+        notifyChange();
         break;
     }
   })
@@ -1658,7 +1688,7 @@ var PathStore = {
 
 module.exports = PathStore;
 
-},{"../actions/LocationActions":1,"../dispatchers/LocationDispatcher":8,"../locations/HistoryLocation":12,"../locations/RefreshLocation":14,"../utils/supportsHistory":32,"events":34,"react/lib/warning":52}],21:[function(_dereq_,module,exports){
+},{"../constants/ActionTypes":8,"../dispatchers/LocationDispatcher":9,"./ScrollStore":23,"events":39}],22:[function(_dereq_,module,exports){
 var React = (typeof window !== "undefined" ? window.React : typeof global !== "undefined" ? global.React : null);
 var invariant = _dereq_('react/lib/invariant');
 var warning = _dereq_('react/lib/warning');
@@ -1825,7 +1855,157 @@ var RouteStore = {
 
 module.exports = RouteStore;
 
-},{"../utils/Path":22,"react/lib/invariant":46,"react/lib/warning":52}],22:[function(_dereq_,module,exports){
+},{"../utils/Path":27,"react/lib/invariant":51,"react/lib/warning":57}],23:[function(_dereq_,module,exports){
+var LocationDispatcher = _dereq_('../dispatchers/LocationDispatcher');
+var ActionTypes = _dereq_('../constants/ActionTypes');
+var warning = _dereq_('react/lib/warning');
+
+var _scrollStrategy = null;
+var _scrollPosition = null;
+
+/**
+ * The ScrollStore keeps track of the scrolling position
+ * that needs to be set after the path change, and
+ * the scrolling strategy that is used to determine it.
+ */
+var ScrollStore = {
+  setup: function (scrollStrategy) {
+    if (_scrollStrategy !== null) {
+      warning(
+        _scrollStrategy === scrollStrategy,
+        'Cannot use strategy %s, already using %s', scrollStrategy, _scrollStrategy
+      );
+      return;
+    }
+
+    _scrollPosition = null;
+    _scrollStrategy = scrollStrategy;
+
+    if (typeof _scrollStrategy.setup === 'function')
+      _scrollStrategy.setup();
+  },
+
+  teardown: function () {
+    if (_scrollStrategy !== null) {
+      if (typeof _scrollStrategy.teardown === 'function')
+        _scrollStrategy.teardown();
+
+      _scrollStrategy = null;
+      _scrollPosition = null;
+    }
+  },
+
+ /**
+  * Returns the scroll position for the current path
+  * according to the strategy specified in <Routes />.
+  *
+  * When falsy, the router won't attempt to restore scroll position.
+  */
+  getScrollPosition: function () {
+    return _scrollPosition;
+  },
+
+  dispatchToken: LocationDispatcher.register(function (payload) {
+    var action = payload.action;
+
+    switch (action.type) {
+      case ActionTypes.SETUP:
+      case ActionTypes.PUSH:
+      case ActionTypes.REPLACE:
+      case ActionTypes.POP:
+        _scrollPosition = _scrollStrategy.getScrollPosition(payload.action);
+        break;
+    }
+  })
+
+};
+
+module.exports = ScrollStore;
+},{"../constants/ActionTypes":8,"../dispatchers/LocationDispatcher":9,"react/lib/warning":57}],24:[function(_dereq_,module,exports){
+var ActionTypes = _dereq_('../constants/ActionTypes');
+
+var _currentPath = null;
+var _scrollPositions = {};
+
+function getScrollPosition(path) {
+  return _scrollPositions[path] || { x: 0, y: 0 };
+}
+
+function resetScrollPosition(path) {
+  _scrollPositions[path] = { x: 0, y: 0 };
+  return getScrollPosition(path);
+}
+
+var ImitateBrowserStrategy = {
+
+  getScrollPosition: function (action) {
+    if (action.path === _currentPath) {
+      return;
+    }
+
+    // Record scroll position before the action
+    if (_currentPath) {
+      _scrollPositions[_currentPath] = action.scrollPosition;
+    }
+    _currentPath = action.path;
+
+    switch (action.type) {
+      case ActionTypes.SETUP:
+        // For the initial load, let browser scroll where it wants to
+        return null;
+
+      case ActionTypes.PUSH:
+      case ActionTypes.REPLACE:
+        // Reset stored position on manually initiated transitions
+        return resetScrollPosition(action.path);
+
+      case ActionTypes.POP:
+        // Try to restore saved position
+        return getScrollPosition(action.path);
+    }
+  },
+
+  teardown: function () {
+    _currentPath = null;
+    _scrollPositions = {};
+  },
+
+  toString: function () {
+    return '<ImitateBrowserStrategy>';
+  }
+
+};
+
+module.exports = ImitateBrowserStrategy;
+},{"../constants/ActionTypes":8}],25:[function(_dereq_,module,exports){
+var NoneStrategy = {
+
+  getScrollPosition: function () {
+    return null;
+  },
+
+  toString: function () {
+    return '<NoneStrategy>';
+  }
+
+};
+
+module.exports = NoneStrategy;
+},{}],26:[function(_dereq_,module,exports){
+var ScrollToTopStrategy = {
+
+  getScrollPosition: function () {
+    return { x: 0, y: 0 };
+  },
+
+  toString: function () {
+    return '<ScrollToTopStrategy>';
+  }
+
+};
+
+module.exports = ScrollToTopStrategy;
+},{}],27:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var merge = _dereq_('qs/lib/utils').merge;
 var qs = _dereq_('qs');
@@ -1993,7 +2173,7 @@ var Path = {
 
 module.exports = Path;
 
-},{"qs":38,"qs/lib/utils":42,"react/lib/invariant":46}],23:[function(_dereq_,module,exports){
+},{"qs":43,"qs/lib/utils":47,"react/lib/invariant":51}],28:[function(_dereq_,module,exports){
 var Promise = _dereq_('when/lib/Promise');
 
 // TODO: Use process.env.NODE_ENV check + envify to enable
@@ -2001,7 +2181,7 @@ var Promise = _dereq_('when/lib/Promise');
 
 module.exports = Promise;
 
-},{"when/lib/Promise":53}],24:[function(_dereq_,module,exports){
+},{"when/lib/Promise":58}],29:[function(_dereq_,module,exports){
 /**
  * Encapsulates a redirect to the given route.
  */
@@ -2013,7 +2193,7 @@ function Redirect(to, params, query) {
 
 module.exports = Redirect;
 
-},{}],25:[function(_dereq_,module,exports){
+},{}],30:[function(_dereq_,module,exports){
 var mixInto = _dereq_('react/lib/mixInto');
 var Promise = _dereq_('./Promise');
 var Redirect = _dereq_('./Redirect');
@@ -2054,7 +2234,7 @@ mixInto(Transition, {
 
 module.exports = Transition;
 
-},{"../actions/LocationActions":1,"./Promise":23,"./Redirect":24,"react/lib/mixInto":51}],26:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"./Promise":28,"./Redirect":29,"react/lib/mixInto":56}],31:[function(_dereq_,module,exports){
 /**
  * Returns the current URL path from `window.location`, including query string
  */
@@ -2065,10 +2245,10 @@ function getWindowPath() {
 module.exports = getWindowPath;
 
 
-},{}],27:[function(_dereq_,module,exports){
+},{}],32:[function(_dereq_,module,exports){
 module.exports = Function.prototype.call.bind(Object.prototype.hasOwnProperty);
 
-},{}],28:[function(_dereq_,module,exports){
+},{}],33:[function(_dereq_,module,exports){
 var ABSOLUTE_URL_FORMAT = /^https?:\/\//;
 
 /**
@@ -2081,9 +2261,9 @@ function isAbsoluteURL(string) {
 
 module.exports = isAbsoluteURL;
 
-},{}],29:[function(_dereq_,module,exports){
+},{}],34:[function(_dereq_,module,exports){
 var HashLocation = _dereq_('../locations/HashLocation');
-var PathStore = _dereq_('../stores/PathStore');
+var LocationActions = _dereq_('../actions/LocationActions');
 var makePath = _dereq_('./makePath');
 
 /**
@@ -2093,7 +2273,7 @@ var makePath = _dereq_('./makePath');
 function makeHref(to, params, query) {
   var path = makePath(to, params, query);
 
-  if (PathStore.getLocation() === HashLocation)
+  if (LocationActions.getLocation() === HashLocation)
     return '#' + path;
 
   return path;
@@ -2101,7 +2281,7 @@ function makeHref(to, params, query) {
 
 module.exports = makeHref;
 
-},{"../locations/HashLocation":11,"../stores/PathStore":20,"./makePath":30}],30:[function(_dereq_,module,exports){
+},{"../actions/LocationActions":1,"../locations/HashLocation":12,"./makePath":35}],35:[function(_dereq_,module,exports){
 var invariant = _dereq_('react/lib/invariant');
 var RouteStore = _dereq_('../stores/RouteStore');
 var Path = _dereq_('./Path');
@@ -2131,7 +2311,7 @@ function makePath(to, params, query) {
 
 module.exports = makePath;
 
-},{"../stores/RouteStore":21,"./Path":22,"react/lib/invariant":46}],31:[function(_dereq_,module,exports){
+},{"../stores/RouteStore":22,"./Path":27,"react/lib/invariant":51}],36:[function(_dereq_,module,exports){
 var Promise = _dereq_('when/lib/Promise');
 
 /**
@@ -2158,7 +2338,7 @@ function resolveAsyncState(asyncState, setState) {
 
 module.exports = resolveAsyncState;
 
-},{"when/lib/Promise":53}],32:[function(_dereq_,module,exports){
+},{"when/lib/Promise":58}],37:[function(_dereq_,module,exports){
 function supportsHistory() {
   /*! taken from modernizr
    * https://github.com/Modernizr/Modernizr/blob/master/LICENSE
@@ -2176,7 +2356,7 @@ function supportsHistory() {
 
 module.exports = supportsHistory;
 
-},{}],33:[function(_dereq_,module,exports){
+},{}],38:[function(_dereq_,module,exports){
 function withoutProperties(object, properties) {
   var result = {};
 
@@ -2190,7 +2370,7 @@ function withoutProperties(object, properties) {
 
 module.exports = withoutProperties;
 
-},{}],34:[function(_dereq_,module,exports){
+},{}],39:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2495,7 +2675,7 @@ function isUndefined(arg) {
   return arg === void 0;
 }
 
-},{}],35:[function(_dereq_,module,exports){
+},{}],40:[function(_dereq_,module,exports){
 /**
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2507,7 +2687,7 @@ function isUndefined(arg) {
 
 module.exports.Dispatcher = _dereq_('./lib/Dispatcher')
 
-},{"./lib/Dispatcher":36}],36:[function(_dereq_,module,exports){
+},{"./lib/Dispatcher":41}],41:[function(_dereq_,module,exports){
 /*
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2759,7 +2939,7 @@ var _prefix = 'ID_';
 
 module.exports = Dispatcher;
 
-},{"./invariant":37}],37:[function(_dereq_,module,exports){
+},{"./invariant":42}],42:[function(_dereq_,module,exports){
 /**
  * Copyright (c) 2014, Facebook, Inc.
  * All rights reserved.
@@ -2814,10 +2994,10 @@ var invariant = function(condition, format, a, b, c, d, e, f) {
 
 module.exports = invariant;
 
-},{}],38:[function(_dereq_,module,exports){
+},{}],43:[function(_dereq_,module,exports){
 module.exports = _dereq_('./lib');
 
-},{"./lib":39}],39:[function(_dereq_,module,exports){
+},{"./lib":44}],44:[function(_dereq_,module,exports){
 // Load modules
 
 var Stringify = _dereq_('./stringify');
@@ -2834,7 +3014,7 @@ module.exports = {
     parse: Parse
 };
 
-},{"./parse":40,"./stringify":41}],40:[function(_dereq_,module,exports){
+},{"./parse":45,"./stringify":46}],45:[function(_dereq_,module,exports){
 // Load modules
 
 var Utils = _dereq_('./utils');
@@ -2990,7 +3170,7 @@ module.exports = function (str, options) {
     return Utils.compact(obj);
 };
 
-},{"./utils":42}],41:[function(_dereq_,module,exports){
+},{"./utils":47}],46:[function(_dereq_,module,exports){
 // Load modules
 
 var Utils = _dereq_('./utils');
@@ -3050,7 +3230,7 @@ module.exports = function (obj, options) {
     return keys.join(delimiter);
 };
 
-},{"./utils":42}],42:[function(_dereq_,module,exports){
+},{"./utils":47}],47:[function(_dereq_,module,exports){
 // Load modules
 
 
@@ -3191,7 +3371,7 @@ exports.isBuffer = function (obj) {
     }
 };
 
-},{}],43:[function(_dereq_,module,exports){
+},{}],48:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3243,7 +3423,7 @@ var ExecutionEnvironment = {
 
 module.exports = ExecutionEnvironment;
 
-},{}],44:[function(_dereq_,module,exports){
+},{}],49:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3299,7 +3479,7 @@ function copyProperties(obj, a, b, c, d, e, f) {
 
 module.exports = copyProperties;
 
-},{}],45:[function(_dereq_,module,exports){
+},{}],50:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3344,7 +3524,7 @@ copyProperties(emptyFunction, {
 
 module.exports = emptyFunction;
 
-},{"./copyProperties":44}],46:[function(_dereq_,module,exports){
+},{"./copyProperties":49}],51:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3406,7 +3586,7 @@ var invariant = function(condition, format, a, b, c, d, e, f) {
 
 module.exports = invariant;
 
-},{}],47:[function(_dereq_,module,exports){
+},{}],52:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3466,7 +3646,7 @@ var keyMirror = function(obj) {
 
 module.exports = keyMirror;
 
-},{"./invariant":46}],48:[function(_dereq_,module,exports){
+},{"./invariant":51}],53:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3505,7 +3685,7 @@ var merge = function(one, two) {
 
 module.exports = merge;
 
-},{"./mergeInto":50}],49:[function(_dereq_,module,exports){
+},{"./mergeInto":55}],54:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3654,7 +3834,7 @@ var mergeHelpers = {
 
 module.exports = mergeHelpers;
 
-},{"./invariant":46,"./keyMirror":47}],50:[function(_dereq_,module,exports){
+},{"./invariant":51,"./keyMirror":52}],55:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3702,7 +3882,7 @@ function mergeInto(one, two) {
 
 module.exports = mergeInto;
 
-},{"./mergeHelpers":49}],51:[function(_dereq_,module,exports){
+},{"./mergeHelpers":54}],56:[function(_dereq_,module,exports){
 /**
  * Copyright 2013-2014 Facebook, Inc.
  *
@@ -3738,7 +3918,7 @@ var mixInto = function(constructor, methodBag) {
 
 module.exports = mixInto;
 
-},{}],52:[function(_dereq_,module,exports){
+},{}],57:[function(_dereq_,module,exports){
 /**
  * Copyright 2014 Facebook, Inc.
  *
@@ -3788,7 +3968,7 @@ if ("production" !== "production") {
 
 module.exports = warning;
 
-},{"./emptyFunction":45}],53:[function(_dereq_,module,exports){
+},{"./emptyFunction":50}],58:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3807,7 +3987,7 @@ define(function (_dereq_) {
 });
 })(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(_dereq_); });
 
-},{"./Scheduler":55,"./async":56,"./makePromise":57}],54:[function(_dereq_,module,exports){
+},{"./Scheduler":60,"./async":61,"./makePromise":62}],59:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3879,7 +4059,7 @@ define(function() {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
 
-},{}],55:[function(_dereq_,module,exports){
+},{}],60:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -3963,7 +4143,7 @@ define(function(_dereq_) {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(_dereq_); }));
 
-},{"./Queue":54}],56:[function(_dereq_,module,exports){
+},{"./Queue":59}],61:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -4036,7 +4216,7 @@ define(function(_dereq_) {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(_dereq_); }));
 
-},{}],57:[function(_dereq_,module,exports){
+},{}],62:[function(_dereq_,module,exports){
 /** @license MIT License (c) copyright 2010-2014 original author or authors */
 /** @author Brian Cavalier */
 /** @author John Hann */
@@ -4834,6 +5014,6 @@ define(function() {
 });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
 
-},{}]},{},[9])
-(9)
+},{}]},{},[10])
+(10)
 });
