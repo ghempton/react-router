@@ -1789,12 +1789,11 @@ var PathStore = {
       _currentLocation, location
     );
 
-    if (_currentLocation !== location) {
-      if (location.setup)
-        location.setup(handleLocationChangeAction);
-
-      _currentPath = location.getCurrentPath();
+    if (_currentLocation !== location && location.setup) {
+      location.setup(handleLocationChangeAction);
     }
+    
+    _currentPath = location.getCurrentPath();
 
     _currentLocation = location;
   },
@@ -6924,7 +6923,7 @@ var emptyFunction = _dereq_("./emptyFunction");
 var warning = emptyFunction;
 
 if ("production" !== "production") {
-  warning = function(condition, format ) {var args=Array.prototype.slice.call(arguments,2);
+  warning = function(condition, format ) {for (var args=[],$__0=2,$__1=arguments.length;$__0<$__1;$__0++) args.push(arguments[$__0]);
     if (format === undefined) {
       throw new Error(
         '`warning(condition, format, ...args)` requires a warning ' +
